@@ -1,0 +1,22 @@
+# Удобная обёртка над `docker build` + `docker run`, чтобы не держать в голове
+# длинные флаги (--ipc=host, volume'ы под storage_state и allure-results).
+#
+# Примеры:
+#   docker compose build
+#   docker compose run --rm tests
+#   docker compose run --rm tests pytest tests/ui/test_login.py -v --alluredir=allure-results
+#   docker compose run --rm tests python -m scripts.generate_storage_state
+
+services:
+  tests:
+    build: .
+    image: reminder-autotests:local
+    ipc: host
+    env_file:
+      - .env
+    volumes:
+      # storage_state и allure-результаты должны пережить остановку контейнера
+      # и быть видны на хосте (для allure serve / повторных прогонов).
+      - ./auth:/app/auth
+      - ./allure-results:/app/allure-results
+    command: ["pytest", "-v", "--alluredir=allure-results"]

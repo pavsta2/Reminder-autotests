@@ -1,0 +1,58 @@
+# Версии ниже — это МИНИМАЛЬНО допустимые (не точный пин), чтобы pip сам
+# подобрал версии, совместимые с вашим локальным Python (а не с тем, что
+# оказалось на машине, где собирался этот файл). После первой успешной
+# установки у себя — зафиксируйте точные версии командой:
+#   python3 -m pip freeze | grep -E -i '^(pytest|playwright|allure-pytest|requests|python-dotenv|pydantic|pydantic-settings|Faker|pytest-xdist|pytest-rerunfailures|loguru|ruff|black|mypy|imap-tools)=='
+# и замените диапазоны ниже на точные "==" под вашу машину — это и есть
+# реальная воспроизводимость (см. Project Instructions: "версия, чтобы
+# прогон был воспроизводим").
+#
+# ВАЖНО для Docker (см. Dockerfile/DOCKER.md): версия playwright, которая
+# у вас реально установится, должна совпадать с тегом образа
+# mcr.microsoft.com/playwright/python:vX.Y.Z-noble — после фиксации версий
+# проверьте и поправьте тег при необходимости.
+
+# Test runner
+pytest>=7.4
+
+# Browser automation
+playwright>=1.45
+pytest-playwright>=0.4
+
+# Reporting
+allure-pytest>=2.13
+
+# HTTP requests (API checks, seeding, health-checks)
+requests>=2.31
+
+# Config / secrets
+python-dotenv>=1.0
+
+# Config/data validation
+pydantic>=2.6
+pydantic-settings>=2.2
+
+# Test data generation
+Faker>=22.0
+
+# Parallel run
+pytest-xdist>=3.5
+
+# Retry flaky tests
+pytest-rerunfailures>=13.0
+
+# Проверка email-уведомлений по IMAP (REMCL-1114/1115/1116 — дедупликация
+# получателей, см. utils/mail_client.py и фикстуру mail_client в
+# fixtures/conftest.py). Подключение read-only (mark_seen=False) — тест не
+# должен портить реальный почтовый ящик.
+imap-tools>=1.5
+
+# Logging
+loguru>=0.7
+
+# Lint / format
+ruff>=0.4
+black>=24.0
+
+# Typing (опционально, статическая проверка)
+mypy>=1.10

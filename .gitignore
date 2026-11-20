@@ -1,0 +1,30 @@
+# Секреты и локальная конфигурация
+.env
+config/environments/.env
+config/environments/*.local.env
+
+# Сохранённая сессия браузера (storage_state)
+auth/*.json
+
+# Allure
+allure-results/
+allure-report/
+
+# Playwright
+test-results/
+playwright-report/
+playwright/.cache/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/

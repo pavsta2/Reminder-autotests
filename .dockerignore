@@ -1,0 +1,17 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.git/
+
+# Секреты и локальные артефакты — передаются в контейнер через volume/--env-file,
+# а не запекаются в образ при сборке.
+.env
+auth/
+allure-results/
+allure-report/
+test-results/
+playwright-report/
