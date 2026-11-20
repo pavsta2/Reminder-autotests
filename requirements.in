@@ -1,0 +1,41 @@
+# requirements.in
+# Прямые зависимости проекта.
+# Используйте `pip-compile requirements.in` для генерации requirements.txt
+# с зафиксированными версиями всех транзитивных зависимостей.
+
+# Test runner
+pytest>=7.4
+pytest-playwright>=0.4
+pytest-xdist>=3.5
+pytest-rerunfailures>=13.0
+
+# Browser automation
+playwright>=1.45
+
+# Reporting
+allure-pytest>=2.13
+
+# HTTP requests
+requests>=2.31
+
+# Config / secrets / validation
+python-dotenv>=1.0
+pydantic>=2.6
+pydantic-settings>=2.2
+
+# Test data generation
+Faker>=22.0
+
+# Email verification (IMAP)
+imap-tools>=1.5
+
+# Logging
+loguru>=0.7
+
+# Lint / format / typing
+ruff>=0.4
+black>=24.0
+mypy>=1.10
+
+# Tooling for dependency management (опционально, для разработчиков)
+pip-tools>=7.4
