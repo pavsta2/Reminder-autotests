@@ -7,21 +7,82 @@
 ## Структура
 
 ```
-pages/            Page Object (BasePage, LoginPage, IssuePage) и компоненты (pages/components/)
-tests/ui/         UI-тесты
-config/           Pydantic-конфиг, читает .env
-fixtures/         conftest.py с фикстурами (storage_state, Allure-вложения)
-scripts/          Разовые скрипты (генерация storage_state)
-auth/             Сохранённые сессии (storage_state) — не коммитится
-allure-results/   Сырые результаты для Allure — не коммитится
+pages/                    Page Object (BasePage, LoginPage, IssuePage) и компоненты (pages/components/)
+tests/ui/                 UI-тесты
+config/                   Pydantic-конфиг, читает .env
+fixtures/                 conftest.py с фикстурами (storage_state, Allure-вложения)
+scripts/                  Разовые скрипты (генерация storage_state)
+auth/                     Сохранённые сессии (storage_state) — не коммитится
+allure-results/           Сырые результаты для Allure — не коммитится
+requirements.in           Прямые зависимости (источник правды) — коммитится
+requirements.txt          Автогенерируемый пин всех версий + хеши (pip-compile) — коммитится
+.pre-commit-config.yaml   Конфиг git-хуков (проверки перед коммитом) — коммитится
+Dockerfile / DOCKER.md    Запуск в официальном образе Playwright
+```
+
+## Что делать коллегам после клонирования
+
+Полный чек-лист первичной настройки на новой машине. Выполняется **один раз**.
+
+```bash
+# 1. Склонировать репозиторий
+git clone git@github.com:pavsta2/Reminder-autotests.git
+cd Reminder-autotests
+
+# 2. Создать и активировать виртуальное окружение
+python -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+
+# 3. Установить зависимости (СТРОГО зафиксированные версии из requirements.txt)
+pip install -r requirements.txt
+
+# 4. Установить pre-commit и активировать хуки в этом клоне
+pip install pre-commit
+pre-commit install
+
+# 5. Создать .env в корне проекта (он в .gitignore, НЕ коммитится)
+#    Минимум: JIRA_HOST / JIRA_USER_EMAIL / JIRA_USER_PASSWORD
+#    Полный список переменных — config/settings.py и раздел
+#    "Дополнительные переменные .env" ниже.
+
+# 6. Поставить браузер (Вариант A или Вариант B — см. ниже)
+playwright install chromium
+
+# 7. Проверить, что всё работает
+pytest -v --alluredir=allure-results
+```
+
+> **Важно про шаг 4.** `pre-commit install` прописывает хуки в `.git/hooks/`
+> ЛОКАЛЬНОГО клона. Сам каталог `.git/` не версионируется, поэтому даже
+> несмотря на то, что `.pre-commit-config.yaml` лежит в репозитории,
+> **каждый разработчик обязан один раз выполнить `pre-commit install`
+> в своём клоне** — иначе проверки перед коммитом просто не запустятся.
+>
+> `pre-commit` пока не входит в `requirements.txt`, поэтому ставится
+> отдельной командой. Если хотите, чтобы он ставился вместе со всем
+> остальным — добавьте строку `pre-commit>=3.7` в `requirements.in`
+> и перекомпилируйте `requirements.txt` (см. раздел «Зависимости»).
+
+Первый прогон `pre-commit` скачает и соберёт изолированные окружения для
+хуков — это может занять минуту-две. Дальше работает быстро. Проверить
+всё сразу по всем файлам, не дожидаясь коммита:
+
+```bash
+pre-commit run --all-files
 ```
 
 ## Быстрый старт
 
-```
+```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
+
+`requirements.txt` генерируется `pip-compile` и содержит **точные версии
+всех зависимостей (включая транзитивные) и их SHA256-хеши** — поэтому
+`pip install -r requirements.txt` ставит ровно то же окружение, что и у
+автора проекта, и падает при подмене пакета. Руками этот файл не
+редактируется, см. раздел «Зависимости: `requirements.in` + `pip-tools`».
 
 Создайте `.env` в корне проекта (он в `.gitignore`, не коммитится) и впишите
 туда как минимум `JIRA_HOST` / `JIRA_USER_EMAIL` / `JIRA_USER_PASSWORD` —
@@ -34,7 +95,7 @@ pip install -r requirements.txt
 
 ### Вариант A — бандлованный браузер Playwright (по умолчанию)
 
-```
+```bash
 playwright install chromium
 ```
 
@@ -55,13 +116,16 @@ Google Chrome вместо скачивания своего Chromium. `playwrig
    Chromium для разработчиков, не Chrome for Testing) — `/Applications/Google Chrome.app`
    на macOS. Playwright находит его автоматически по стандартному пути.
 2. В `.env` укажите:
-   ```
-   BROWSER=chromium
-   BROWSER_CHANNEL=chrome
-   ```
-   (`BROWSER_CHANNEL` работает только вместе с `BROWSER=chromium` — канал
-   есть только у браузеров хромиумового семейства: `chrome`, `msedge`,
-   `chrome-beta`, `msedge-beta`, `msedge-dev`.)
+
+```
+BROWSER=chromium
+BROWSER_CHANNEL=chrome
+```
+
+(`BROWSER_CHANNEL` работает только вместе с `BROWSER=chromium` — канал
+есть только у браузеров хромиумового семейства: `chrome`, `msedge`,
+`chrome-beta`, `msedge-beta`, `msedge-dev`.)
+
 3. Никаких дополнительных флагов в `pytest`/скриптах передавать не нужно —
    `fixtures/conftest.py` и `scripts/generate_storage_state.py` уже читают
    `BROWSER_CHANNEL` из `.env` и сами подставляют `channel=...` при запуске
@@ -70,10 +134,109 @@ Google Chrome вместо скачивания своего Chromium. `playwrig
    запустить нельзя — для кросс-браузерности на старой ОС см. `DOCKER.md`.
 
 Проверить, что всё подхватилось:
-```
+
+```bash
 python -c "from config.settings import get_settings; print(get_settings().browser_channel)"
 ```
+
 должно напечатать `chrome`.
+
+## Зависимости: `requirements.in` + `pip-tools`
+
+Проект использует двухфайловую схему, чтобы прогон был воспроизводимым
+на любой машине и в CI:
+
+- **`requirements.in`** — источник правды. Только ПРЯМЫЕ зависимости с
+  минимально допустимыми версиями (`pytest>=7.4`, `playwright>=1.45`, ...).
+  редактируется руками.
+- **`requirements.txt`** — автогенерируемый «снимок»: точные версии всех
+  пакетов, включая транзитивные, плюс SHA256-хеши. **Руками не править.**
+
+Первичная установка `pip-tools` (он уже входит в `requirements.txt`,
+так что после `pip install -r requirements.txt` отдельно ставить не нужно):
+
+```bash
+pip install pip-tools
+```
+
+### Повседневные команды
+
+| Задача | Команда |
+|---|---|
+| Добавить/изменить прямую зависимость | Правим `requirements.in`, затем `pip-compile requirements.in --output-file=requirements.txt --generate-hashes` |
+| Обновить ВСЕ зависимости до максимально новых | `pip-compile --upgrade requirements.in --output-file=requirements.txt --generate-hashes` |
+| Обновить только один пакет | `pip-compile --upgrade-package pytest requirements.in --output-file=requirements.txt --generate-hashes` |
+| Поставить окружение у себя / в CI | `pip install -r requirements.txt` |
+
+После любой перекомпиляции коммитим **оба файла** (`requirements.in` и
+`requirements.txt`) одним коммитом.
+
+### Про warning «The following packages were not pinned: pip, setuptools»
+
+В конце `requirements.txt` `pip-compile` пишет:
+
+```
+# WARNING: The following packages were not pinned, but pip requires them to be
+# pinned when the requirements file includes hashes ...
+# pip
+# setuptools
+```
+
+Это **нормально и не является ошибкой**. `pip-tools` намеренно не пинует
+базовые инструменты сборки (`pip`, `setuptools`) — обновление pip самим
+pip в процессе установки может сломать окружение. Файл при этом полностью
+рабочий, `pip install -r requirements.txt` отрабатывает корректно.
+
+Если хочется убрать warning и запинить их тоже — добавьте `--allow-unsafe`:
+
+```bash
+pip-compile requirements.in --output-file=requirements.txt --generate-hashes --allow-unsafe
+```
+
+Если хеши не нужны (например, для быстрого локального эксперимента) —
+можно сгенерировать файл без `--generate-hashes`, но в репозитории
+принято держать вариант С хешами.
+
+### Python и Docker
+
+Текущий `requirements.txt` скомпилирован под **Python 3.11** (см. шапку
+файла). Версия `playwright` в нём жёстко зафиксирована и **должна совпадать
+с тегом базового образа в `Dockerfile`** — см. раздел Docker ниже.
+
+## pre-commit
+
+В корне лежит `.pre-commit-config.yaml` — общий для всей команды набор
+проверок, которые запускаются автоматически на `git commit`. Файл
+версионируется, чтобы у всех были одинаковые правила и чтобы те же
+проверки можно было переиспользовать в CI.
+
+Активация (один раз на клон, см. чек-лист выше):
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+Полезные команды:
+
+```bash
+pre-commit run --all-files          # прогнать все хуки по всем файлам прямо сейчас
+pre-commit autoupdate               # обновить rev хуков до свежих версий
+pre-commit uninstall                # отключить хуки в этом клоне
+git commit --no-verify              # разово пропустить проверки (лучше не злоупотреблять)
+```
+
+**Если хук что-то изменил** (например, `pip-compile` перегенерировал
+`requirements.txt` или форматтер поправил код) — коммит прервётся. Это
+ожидаемо: нужно добавить изменения в индекс и повторить коммит:
+
+```bash
+git add -u
+git commit -m "..."
+```
+
+Среди прочего настроена проверка актуальности `requirements.txt`: если вы
+поменяли `requirements.in`, но забыли перекомпилировать — коммит не пройдёт.
 
 ## storage_state (сессия) — генерируется автоматически
 
@@ -102,7 +265,7 @@ python -c "from config.settings import get_settings; print(get_settings().browse
 первого бутстрапа на чистой машине или если просто хочется обновить сессию
 заранее, не запуская тесты:
 
-```
+```bash
 python -m scripts.generate_storage_state
 ```
 
@@ -126,19 +289,22 @@ Jira-аккаунт без права "Ability to create reminders for groups or
    пользователя — фикстурой `user_without_group_reminder_permission_page` в
    `fixtures/conftest.py`, по требованию, при первом тесте, которому она
    нужна. Вручную, при желании получить сессию заранее:
-   ```
-   python -m scripts.generate_storage_state --as=without_group_reminder_permission
-   ```
+
+```bash
+python -m scripts.generate_storage_state --as=without_group_reminder_permission
+```
+
 3. Если email/пароль не заданы — тест honestly skip'ится (а не падает) с
    понятной причиной.
 
 ## Запуск тестов
 
-```
+```bash
 pytest -v --alluredir=allure-results
 ```
 
 Полезные флаги:
+
 - `--headed` — показать браузер (для отладки локаторов; с Вариантом B это
   будет настоящее окно Google Chrome).
 - `-m "ui and smoke"` / `-m issue_panel` / `-m auth` / `-m recipients` / `-m message` —
@@ -168,7 +334,7 @@ pytest -v --alluredir=allure-results
 `pytest-xdist` уже в `requirements.txt`, сам флаг по умолчанию не включён —
 передаётся явно:
 
-```
+```bash
 pytest -n auto --dist=loadscope --alluredir=allure-results
 ```
 
@@ -178,9 +344,9 @@ pytest -n auto --dist=loadscope --alluredir=allure-results
   существующая фикстура браузера, отдельно настраивать ничего не нужно.
 - `--dist=loadscope` — группирует тесты одного файла/класса на один и тот
   же воркер. На этом проекте это важнее, чем обычно: часть тестов
-  (`recipients_modal` и всё, что его использует в `test_reminder_
-  recipients.py`, включая `test_reminder_created_successfully_with_user_
-  or_group_recipient`) создают реальные записи в ОБЩЕЙ секции Reminder
+  (`recipients_modal` и всё, что его использует в `test_reminder_recipients.py`,
+  включая `test_reminder_created_successfully_with_user_or_group_recipient`)
+  создают реальные записи в ОБЩЕЙ секции Reminder
   одной и той же задачи (`--issue-key`, по умолчанию `CPR1-10`) на живом
   инстансе. Без `--dist=loadscope` (т.е. с дефолтным `--dist=load`, когда
   pytest-xdist раскидывает тесты по воркерам произвольно) несколько таких
@@ -199,7 +365,8 @@ pytest -n auto --dist=loadscope --alluredir=allure-results
   `pytest -n auto --dist=loadscope -m "not email" --reruns 2 --alluredir=allure-results`.
 
 Отчёт:
-```
+
+```bash
 allure serve allure-results
 ```
 
@@ -213,6 +380,7 @@ allure serve allure-results
 - `JIRA_USER_DISPLAY_NAME` — отображаемое имя обычного тестового
   пользователя (REMCL-1063/2852, ветка `recipient_name="creator"` в
   `test_reminder_created_successfully_with_user_or_group_recipient`).
+
 - `JIRA_TEST_GROUP_NAMES` — список РЕАЛЬНО существующих на инстансе групп
   через запятую, минимум 3 (например: `site-admins,jira-software-users,confluence-users`) —
   нужен multi-group кейсу (REMCL-2856) того же теста. "Watchers" для этого
@@ -220,6 +388,7 @@ allure serve allure-results
   (не зависит от тестовых данных), а тут нужны минимум ДВЕ РАЗНЫЕ обычные
   группы, которые ищутся через `search()`, как и любое другое не
   закреплённое имя.
+
 - `JIRA_USER_WITHOUT_GROUP_REMINDER_PERMISSION_EMAIL` / `_PASSWORD` /
   `_DISPLAY_NAME` — второй тестовый пользователь без права "Ability to
   create reminders for groups or roles" (REMCL-1076/1065). EMAIL/PASSWORD
@@ -229,6 +398,7 @@ allure serve allure-results
   honestly skip'ится. `_DISPLAY_NAME` сам по себе пока нигде не
   используется (задел на будущее — если понадобится сверять отображаемое
   имя в UI, как уже сделано для основного пользователя).
+
 - `JIRA_USERS_WITHOUT_ISSUE_ACCESS_DISPLAY_NAMES` — отображаемые имена
   РЕАЛЬНЫХ пользователей тестового инстанса БЕЗ доступа к тестовой
   задаче, через запятую, минимум 4 (REMCL-2736, тест
@@ -237,6 +407,7 @@ allure serve allure-results
   сессия тут НЕ нужна — это не тот, под кем логинится тест, а просто ещё
   один recipient, выбираемый обычным тестовым пользователем в поле
   Recipients. Без минимум 4 имён тест honestly skip'ится.
+
 - `MAIL_IMAP_HOST` / `MAIL_IMAP_PORT` (дефолт `993`) / `MAIL_IMAP_LOGIN` /
   `MAIL_IMAP_PASSWORD` — доступ по IMAP к ящику ОБЫЧНОГО тестового
   пользователя (обычно тот же email, что и `JIRA_USER_EMAIL`), используется
@@ -254,15 +425,17 @@ allure serve allure-results
   аккаунта. Без всех трёх (`HOST`/`LOGIN`/`PASSWORD`) тесты с меткой
   `@pytest.mark.email`, которым нужна РЕАЛЬНАЯ проверка письма, honestly
   skip'ятся (см. `Settings.has_mail_imap_credentials`).
+
 - `MAIL_WAIT_TIMEOUT_S` (дефолт `90`) / `MAIL_POLL_INTERVAL_S` (дефолт `5`)
   — таймаут/интервал поллинга почты в `MailClient.wait_for_email`. Дефолт
   подобран с запасом поверх наблюдаемого времени ДОСТАВКИ самого письма
   (обычно до ~1 минуты) — НЕ включает время до наступления запланированного
   момента самого ремайндера (тесты, которые сначала ждут это время, сами
-  увеличивают `timeout_s` на конкретный вызов, см. `test_single_reminder_
-  when_recipient_selected_via_multiple_paths`). Если на практике письма
-  идут дольше (или сервер реже проверяет просроченные ремайндеры, чем
-  предполагалось) — увеличьте.
+  увеличивают `timeout_s` на конкретный вызов, см.
+  `test_single_reminder_when_recipient_selected_via_multiple_paths`). Если на
+  практике письма идут дольше (или сервер реже проверяет просроченные
+  ремайндеры, чем предполагалось) — увеличьте.
+
 - `MAIL_IMAP_TIMEOUT_S` (дефолт `20`) — таймаут (сек) на КАЖДУЮ отдельную
   сокет-операцию IMAP-соединения (connect/login/fetch/logout). ИСПРАВЛЕНО
   (2026-11-19): без него тест на реальном прогоне либо зависал надолго
@@ -274,28 +447,31 @@ allure serve allure-results
   и просто считаются "эта попытка поллинга не удалась" — `wait_for_email`
   повторяет попытку на следующей итерации, не роняя тест и не зависая.
 
-  Если `wait_for_email` всё же падает по таймауту, хотя письмо, на
-  первый взгляд, точно пришло — AssertionError (ДОБАВЛЕНО 2026-11-19)
-  сам приводит RAW-темы (через `repr()`) всех писем, реально лежащих в
-  INBOX за это окно времени, чтобы сразу было видно, то ли письма там
-  нет вообще (не та папка/ящик/рассинхронизация часов), то ли оно есть,
-  но с невидимым отличием в байтах (например, пробел вместо `+`). Не
-  дожидаясь полного таймаута (который для некоторых тестов — REMCL-1114
-  и т.п. — сознательно большой), то же самое можно посмотреть прямо
-  сейчас разовым скриптом:
-  ```bash
-  python -m scripts.debug_mail_subjects --minutes 15
-  ```
+Если `wait_for_email` всё же падает по таймауту, хотя письмо, на
+первый взгляд, точно пришло — AssertionError (ДОБАВЛЕНО 2026-11-19)
+сам приводит RAW-темы (через `repr()`) всех писем, реально лежащих в
+INBOX за это окно времени, чтобы сразу было видно, то ли письма там
+нет вообще (не та папка/ящик/рассинхронизация часов), то ли оно есть,
+но с невидимым отличием в байтах (например, пробел вместо `+`). Не
+дожидаясь полного таймаута (который для некоторых тестов — REMCL-1114
+и т.п. — сознательно большой), то же самое можно посмотреть прямо
+сейчас разовым скриптом:
+
+```bash
+python -m scripts.debug_mail_subjects --minutes 15
+```
+
 - `JIRA_TEST_GROUP_CONTAINING_CREATOR` — имя РЕАЛЬНОЙ группы на тестовом
   инстансе, членом которой ТОЧНО является обычный тестовый пользователь
-  (`JIRA_USER_EMAIL`). ИСПРАВЛЕНО (2026-11-19): `test_single_reminder_
-  when_recipient_selected_via_multiple_paths` (REMCL-1114) больше НЕ
-  использует эту переменную — см. `MAIL_TEST_RECIPIENT_DISPLAY_NAME` /
-  `JIRA_TEST_GROUP_CONTAINING_MAIL_RECIPIENT` ниже. Оставлена на будущее
-  для другого теста, которому важен именно creator, а не IMAP-доступный
-  получатель.
-- `MAIL_TEST_RECIPIENT_DISPLAY_NAME` / `JIRA_TEST_GROUP_CONTAINING_MAIL_
-  RECIPIENT` — ДОБАВЛЕНО (2026-11-19, по живому прогону): отдельный
+  (`JIRA_USER_EMAIL`). ИСПРАВЛЕНО (2026-11-19):
+  `test_single_reminder_when_recipient_selected_via_multiple_paths`
+  (REMCL-1114) больше НЕ использует эту переменную — см.
+  `MAIL_TEST_RECIPIENT_DISPLAY_NAME` / `JIRA_TEST_GROUP_CONTAINING_MAIL_RECIPIENT`
+  ниже. Оставлена на будущее для другого теста, которому важен именно
+  creator, а не IMAP-доступный получатель.
+
+- `MAIL_TEST_RECIPIENT_DISPLAY_NAME` / `JIRA_TEST_GROUP_CONTAINING_MAIL_RECIPIENT`
+  — ДОБАВЛЕНО (2026-11-19, по живому прогону): отдельный
   реальный пользователь тестового инстанса (НЕ обычный тестовый
   пользователь, под которым логинится сам тест) и группа, точно его
   содержащая — нужны ТОЛЬКО для REMCL-1114 (дедупликация получателей:
@@ -303,21 +479,22 @@ allure serve allure-results
   одно письмо). Причина отдельной переменной: изначально recipient'ом
   выбирался сам creator (`JIRA_USER_DISPLAY_NAME`), но живым прогоном
   выяснилось, что его почтовый ящик — не тот, что реально читается по
-  IMAP (`MAIL_IMAP_LOGIN`, см. выше) — то есть `MAIL_TEST_RECIPIENT_
-  DISPLAY_NAME` должно быть отображаемым именем РОВНО того пользователя,
-  чей ящик указан в `MAIL_IMAP_LOGIN`. ОТДЕЛЬНАЯ от `JIRA_TEST_GROUP_
-  NAMES`/`JIRA_TEST_GROUP_CONTAINING_CREATOR` группа: Reporter/Assignee/
-  Watchers тестовой задачи и произвольная группа из `JIRA_TEST_GROUP_
-  NAMES` для этой цели НЕ подходят — если такая группа содержит ещё
+  IMAP (`MAIL_IMAP_LOGIN`, см. выше) — то есть `MAIL_TEST_RECIPIENT_DISPLAY_NAME`
+  должно быть отображаемым именем РОВНО того пользователя,
+  чей ящик указан в `MAIL_IMAP_LOGIN`. ОТДЕЛЬНАЯ от `JIRA_TEST_GROUP_NAMES` /
+  `JIRA_TEST_GROUP_CONTAINING_CREATOR` группа: Reporter/Assignee/
+  Watchers тестовой задачи и произвольная группа из `JIRA_TEST_GROUP_NAMES`
+  для этой цели НЕ подходят — если такая группа содержит ещё
   кого-то кроме нужного получателя, тест реально отправит письмо
   посторонним людям. Без обеих переменных
   `test_single_reminder_when_recipient_selected_via_multiple_paths`
   honestly skip'ится.
+
 - `JIRA_TEST_GROUPS_CONTAINING_MAIL_RECIPIENT` — ДОБАВЛЕНО (2026-11-19,
   по решению пользователя): список РЕАЛЬНЫХ групп через запятую (до 5,
-  см. ниже), в КАЖДУЮ из которых явно добавлен `MAIL_TEST_RECIPIENT_
-  DISPLAY_NAME` — нужен для REMCL-1118 (`test_group_recipient_reminder_
-  delivered_to_known_member`), который при выборе recipient'ом каждой из
+  см. ниже), в КАЖДУЮ из которых явно добавлен `MAIL_TEST_RECIPIENT_DISPLAY_NAME`
+  — нужен для REMCL-1118 (`test_group_recipient_reminder_delivered_to_known_member`),
+  который при выборе recipient'ом каждой из
   этих групп реально проверяет по IMAP, что письмо дошло ДО ЭТОГО
   известного участника (РОВНО одно письмо). Это пересматривает более
   раннее решение (2026-11-18) — раньше тест только создавал ремайндер и
@@ -336,6 +513,37 @@ allure serve allure-results
 
 См. `DOCKER.md` — официальный образ Playwright с предустановленными
 браузерами, версия macOS хоста роли не играет.
+
+**Версия базового образа ОБЯЗАНА совпадать с версией `playwright` из
+`requirements.txt`** (она там запинена `pip-compile`). Проверить:
+
+```bash
+grep "^playwright==" requirements.txt
+```
+
+Сейчас там `playwright==1.65.2`, значит в `Dockerfile`:
+
+```dockerfile
+FROM mcr.microsoft.com/playwright/python:v1.65.2-noble
+```
+
+После каждой перекомпиляции `requirements.txt` с обновлением Playwright
+тег образа нужно поправить вручную, иначе драйвер Playwright из pip и
+браузеры из образа разойдутся по версиям.
+
+Сборка и запуск:
+
+```bash
+docker build -t reminder-autotests .
+
+docker run --rm \
+  --env-file .env \
+  -v "$(pwd)/allure-results:/app/allure-results" \
+  reminder-autotests
+```
+
+`.env` и `auth/` внутрь образа НЕ запекаются (исключены через
+`.dockerignore`) — креды передаются только при запуске через `--env-file`.
 
 ## Известные ограничения / технические риски
 
@@ -360,6 +568,7 @@ allure serve allure-results
 - Точный локатор/текст кнопки отказа от предложения включить 2FA не
   подтверждён вживую (диалог не появился в сессии разведки локаторов) —
   см. docstring в `pages/login_page.py`.
+
 - Локаторы содержимого внутри iframe секции Reminder (`pages/components/reminder_panel.py`)
   определены по скриншоту, а не по accessibility tree (инструмент разведки
   не читает cross-origin iframe) — стоит перепроверить первым реальным
@@ -371,6 +580,7 @@ allure serve allure-results
   (`extension_id` — из `data-testid` секции). Тоггл сворачивания на тестовом
   инстансе по умолчанию уже в `aria-expanded="true"` — `expand()` это
   учитывает.
+
 - Модалка "New reminder" (`pages/components/reminder_modal.py`) — её корневой
   контейнер подтверждён как `role="dialog"`, и фрейм внутри него ищется
   через `dialog.frame_locator("iframe")`, а НЕ по `title`/extension_id, как
@@ -378,6 +588,7 @@ allure serve allure-results
   панели и iframe модалки с одним и тем же `title`, поэтому матчинг по
   title для модалки ненадёжен (может схватить не ту рамку), а scoping через
   `role="dialog"` однозначен.
+
 - Поле **Recipients** в модалке (то же `reminder_modal.py`) — живым прогоном
   подтверждены точные тексты (placeholder, tooltip, ошибка валидации,
   "No recipients found", секции "Users"/"Groups" в выпадающем списке) и
@@ -403,13 +614,14 @@ allure serve allure-results
     предполагавшие алфавитную сортировку, пропущены как противоречащие
     наблюдаемому поведению — см. причины skip в
     `tests/ui/test_reminder_recipients.py`).
+
 - Поле **Date & time** в модалке (`reminder_modal.py`, п.13 докстринга
   модуля; добавлено 2026-11-18 для REMCL-1114/1118) — живым просмотром
   через built-in browser подтверждено ПОВЕДЕНИЕ: поле НЕ редактируется
   свободным вводом текста с клавиатуры, значение меняется ТОЛЬКО кликами
   по открывающемуся попапу (сетка календаря + два скроллируемых списка
-  часов/минут), причём минуты доступны ТОЛЬКО с шагом 5 (00, 05, 10, ...,
-  55) — произвольную минуту выставить нельзя. Поэтому тесты, которым нужно
+  часов/минут), причём минуты доступны ТОЛЬКО с шагом 5 (00, 05, 10, ..., 55)
+  — произвольную минуту выставить нельзя. Поэтому тесты, которым нужно
   "ремайндер через N минут", сначала округляют целевое время вверх до
   ближайших 5 минут (`utils/time_helpers.round_up_to_next_five_minutes`).
   Конкретные `role`/accessible name локаторов внутри попапа (ячейки
@@ -419,6 +631,7 @@ allure serve allure-results
   перепроверить первым реальным прогоном, особенно пересечение текстов
   "00"/"05"/"10"/"15"/"20" между списками часов и минут (см. ТЕХНИЧЕСКИЙ
   РИСК в п.13 докстринга `reminder_modal.py`).
+
 - `utils/mail_client.py` (`MailClient`) ищет совпадение текста И в теме, И
   в теле письма (на случай, если плагин кладёт текст Message не в тему) —
   НЕ подтверждено вживую, какое поле реально используется; также
@@ -426,18 +639,19 @@ allure serve allure-results
   запланированного момента ремайндера, прежде чем отправить письмо
   (`_PLUGIN_SCHEDULE_POLL_BUFFER_S` в `tests/ui/test_reminder_recipients.py`
   — произвольный, неизмеренный запас). Оба риска снимаются только первым
-  реальным прогоном `test_single_reminder_when_recipient_selected_via_
-  multiple_paths` с реально заданными `MAIL_IMAP_*`/`JIRA_TEST_GROUP_
-  CONTAINING_CREATOR` в `.env`.
+  реальным прогоном `test_single_reminder_when_recipient_selected_via_multiple_paths`
+  с реально заданными `MAIL_IMAP_*` / `JIRA_TEST_GROUP_CONTAINING_CREATOR` в `.env`.
+
 - Ошибка "{Username} don't have permission to view the work item.
   Unselect them to create reminder." под полем Recipients (REMCL-2736,
   `reminder_modal.py` п.14, `ACCESS_ERROR_SUFFIX`) — текст/пунктуация
   угаданы по формулировке самого RTM test-кейса, НЕ подтверждены вживую;
   порядок перечисления имён при НЕСКОЛЬКИХ выбранных пользователях без
-  доступа тоже неизвестен — `test_reminder_not_created_for_user_without_
-  issue_access` поэтому проверяет только то, что каждое имя встречается
+  доступа тоже неизвестен — `test_reminder_not_created_for_user_without_issue_access`
+  поэтому проверяет только то, что каждое имя встречается
   в тексте, без фиксации порядка. Снимается первым реальным прогоном с
   реально заданными `JIRA_USERS_WITHOUT_ISSUE_ACCESS_DISPLAY_NAMES`.
+
 - Автологин внутри фикстуры `_ensured_storage_state` (`fixtures/conftest.py`)
   переиспользует тот же код, что и `scripts/generate_storage_state.py`
   (функция `login_and_save_storage_state`), который уже подтверждён живыми
