@@ -1,0 +1,8 @@
+repos:
+  - repo: https://github.com/jazzband/pip-tools
+    rev: 7.4.1
+    hooks:
+      - id: pip-compile
+        name: pip-compile (check requirements.txt is up to date)
+        files: ^requirements\.in$
+        args: [requirements.in, --output-file=requirements.txt, --generate-hashes, --quiet]
