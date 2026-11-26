@@ -1,26 +1,31 @@
 """
 IssuePage — страница задачи Jira Cloud: {jira_host}/browse/{issue_key}.
-"""
 
+ИСПРАВЛЕНО (2026-11-25, по решению пользователя): работа с всплывающими
+уведомлениями вынесена в отдельный сквозной компонент
+pages/components/notification.py (Notification). Метод
+has_recipients_visibility_warning_flag() сохранён с прежней сигнатурой и
+теперь делегирует в него — уведомления не принадлежат ни странице, ни
+форме, и держать их локаторы здесь означало дублировать их же в других
+местах (ошибка URL и т.п.).
+"""
 from __future__ import annotations
 
 from playwright.sync_api import Page
-from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from config.settings import get_settings
 from pages.base_page import BasePage
+from pages.components.notification import Notification
 from pages.components.reminder_panel import Environment, ReminderPanel
 
 _settings = get_settings()
 
-# REMCL-2734/2735: предупреждающее информационное окно (AtlasKit Flag),
-# которое Jira показывает ПОСЛЕ успешного создания ремайндера.
-#
-# ПОДТВЕРЖДЕНО (2026-11-16) живым скриншотом пользователя — точный текст
-# взят оттуда напрямую, а не угадан. Внешний вид на скриншоте: иконка
-# предупреждения (жёлтый треугольник с "!"), жирный заголовок "Warning",
-# крестик закрытия справа от заголовка, под ним — этот текст. Соответствует
-# стандартному AtlasKit Flag/FlagGroup.
+# REMCL-2734/2735: текст предупреждающего уведомления, которое Jira
+# показывает ПОСЛЕ успешного создания ремайндера. ПОДТВЕРЖДЕНО (2026-11-16)
+# живым скриншотом пользователя — точный текст взят оттуда напрямую.
+# Заголовок при этом — "Warning", иконка — жёлтый треугольник.
+# Константа оставлена здесь (на неё могут ссылаться существующие тесты);
+# сам поиск теперь идёт через Notification.
 RECIPIENTS_VISIBILITY_WARNING_TEXT = (
     "Only recipients who can view the work item when the reminder is sent "
     "will receive it."
@@ -32,12 +37,15 @@ class IssuePage(BasePage):
         """
         environment: какую инсталляцию аппа Reminder искать в сайдбаре этой
         задачи — на инстансах с несколькими одновременно установленными
-        окружениями (prod/stg/dev), см. docstring ReminderPanel. По умолчанию
-        "prod" — на инстансах с единственной инсталляцией (CPR1/REMCL)
-        поведение не меняется.
+        окружениями (prod/stg/dev), см. docstring ReminderPanel. По
+        умолчанию "prod" — на инстансах с единственной инсталляцией
+        (CPR1/REMCL) поведение не меняется.
         """
         super().__init__(page)
         self.reminder_panel = ReminderPanel(page, environment=environment)
+        # Всплывающие уведомления — сквозной компонент, рендерятся хостом
+        # Jira в TOP-документе (см. докстринг notification.py).
+        self.notification = Notification(page)
 
     def open(self, issue_key: str) -> None:
         self.goto(_settings.issue_url(issue_key))
@@ -50,42 +58,29 @@ class IssuePage(BasePage):
         """Проверяет наличие контекстной секции плагина Reminder в сайдбаре задачи."""
         return self.reminder_panel.is_present(timeout_ms=timeout_ms)
 
-    def has_recipients_visibility_warning_flag(self, timeout_ms: int = 10_000) -> bool:
+    def has_recipients_visibility_warning_flag(
+        self, timeout_ms: int = 10_000
+    ) -> bool:
         """
         REMCL-2734/2735: проверяет, что после создания ремайндера появился
-        предупреждающий flag с текстом RECIPIENTS_VISIBILITY_WARNING_TEXT
-        (см. константу выше — подтверждена живым скриншотом).
+        предупреждающий flag с текстом RECIPIENTS_VISIBILITY_WARNING_TEXT.
 
-        МЕТОД — НА IssuePage, А НЕ НА ReminderModal/ReminderPanel: flag
-        рендерится ВЕРХНЕУРОВНЕВО, напрямую в TOP-документе страницы
-        задачи (а не внутри iframe формы или панели) — это стандартный для
-        Forge-приложений паттерн: само приложение вызывает API хоста
-        (`@forge/bridge`, `view.createFlag(...)`), а РЕНДЕРИТ flag уже сам
-        Jira-хост через свой собственный AtlasKit FlagGroup-портал, вне
-        какого-либо iframe приложения. Тот же принцип, что и у модалки
-        "New reminder" (см. докстринг ReminderModal, п.2: `section[role=
-        "dialog"]` тоже в TOP-документе, а не внутри iframe секции/панели).
-        Поэтому здесь используется self.page.get_by_text(...) напрямую,
-        без какого-либо frame_locator.
+        ИСПРАВЛЕНО (2026-11-25): делегирует в Notification.has_with_text().
+        Сигнатура и смысл сохранены. Поиск по-прежнему идёт в TOP-документе
+        (флаг рендерит хост Jira через AtlasKit FlagGroup, вне iframe
+        приложения) — это теперь зафиксировано разметкой, а не предположением.
 
-        К моменту вызова ReminderModal.submit() уже дождался закрытия
-        модалки (см. её докстринг) — flag появляется уже ПОСЛЕ этого,
-        поэтому вызывать этот метод имеет смысл только после submit().
+        ВНИМАНИЕ (находка 2026-11-25): флаг живёт ~5 секунд и исчезает сам.
+        Вызывать СРАЗУ после submit(), до долгих проверок контента страницы.
+        Прежний таймаут 10с сохранён для совместимости, но он БОЛЬШЕ времени
+        жизни флага: при отсутствии флага тест будет ждать лишние секунды.
+        Для новых тестов используйте notification.wait_for(kind="Warning")
+        с дефолтным коротким таймаутом.
 
-        ТЕХНИЧЕСКИЙ РИСК (не снят полностью): скриншотом подтверждён текст
-        ТОЛЬКО для recipient'а-пользователя (Reporter/Assignee/Watchers —
-        REMCL-2734). Для recipient'а-группы (REMCL-2735) тот же самый
-        текст предполагается по аналогии (сам текст не содержит имени
-        конкретного recipient'а и выглядит как общая оговорка про
-        видимость задачи, а не специфичная для типа recipient'а формулировка),
-        но ОТДЕЛЬНЫМ скриншотом для группы это не подтверждено. Также не
-        подтверждено, через сколько секунд flag исчезает сам — таймаут
-        подобран с запасом (10с), а не по факту замера.
+        ТЕХНИЧЕСКИЙ РИСК (не снят): текст подтверждён скриншотом только для
+        recipient'а-пользователя (REMCL-2734). Для группы (REMCL-2735) тот же
+        текст предполагается по аналогии — отдельным скриншотом не подтверждён.
         """
-        try:
-            self.page.get_by_text(
-                RECIPIENTS_VISIBILITY_WARNING_TEXT, exact=True
-            ).first.wait_for(state="visible", timeout=timeout_ms)
-            return True
-        except PlaywrightTimeoutError:
-            return False
+        return self.notification.has_with_text(
+            RECIPIENTS_VISIBILITY_WARNING_TEXT, timeout_ms=timeout_ms
+        )

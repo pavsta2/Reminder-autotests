@@ -1,10 +1,8 @@
 """
 BasePage — общая база для всех Page Object.
-
 Содержит только технические обёртки (waits, клики, чтение текста, скриншоты).
 Никаких assert здесь быть не должно — ассерты делаются в тестах.
 """
-
 from __future__ import annotations
 
 import re
@@ -34,16 +32,35 @@ _SCRIPT_LOAD_ERROR_RE = re.compile(r"We tried to load scripts", re.IGNORECASE)
 # могут меняться/A-B-тестироваться на стороне Atlassian. "Dismiss Quickstart"
 # подтверждён живым прогоном (см. разведку локаторов секции Reminder);
 # остальные — best-effort кандидаты по распространённым паттернам Atlassian UI.
-# Регексы на "close" намеренно БЕЗ привязки к началу/концу строки (не `^close$`) —
+#
+# Регексы на "close" намеренно БЕЗ привязки к началу/концу строки (не "^close$") —
 # у разных оверлеев это может быть "Close", "Close panel", "Close Rovo chat" и т.п.
+#
+# ИСПРАВЛЕНО (2026-11-25, по разметке правого сайдбара задачи, присланной
+# пользователем — КРИТИЧНО): из списка УДАЛЁН кандидат
+#   ("role_button", re.compile(r"collapse|minimize|свернуть", re.IGNORECASE))
+# Он был угаданным best-effort паттерном и НИКОГДА не подтверждался вживую,
+# но при этом ломал основной флоу: в актуальной разметке Jira Cloud кнопки
+# сворачивания секций сайдбара имеют accessible name
+#   aria-label="Collapse Details"
+#   aria-label="Collapse Apps"
+#   aria-label="Collapse "   (шеврон app-секции, напр. Reminder DEV)
+# поэтому get_by_role("button", name=re.compile("collapse", re.I)) матчил их
+# ВСЕ и кликал .first — то есть dismiss_onboarding_overlays() САМ сворачивал
+# Details, а на следующем round — обёртку Apps, внутри которой лежит секция
+# Reminder. Дальше тест не находил секцию и падал, хотя приложение было
+# исправно. Это вторая (и более коварная) причина поломки помимо изначально
+# свёрнутой обёртки Apps — см. находку 1 в докстринге
+# pages/components/reminder_panel.py от 2026-11-25.
+# Возвращать этот кандидат нельзя: любое "сворачивание" в этом UI — это
+# продуктовый тоггл секции, а не закрытие онбординг-оверлея.
 _ONBOARDING_DISMISS_CANDIDATES = [
     ("role_button", "Dismiss Quickstart"),
     ("role_button", re.compile(r"close", re.IGNORECASE)),
     ("aria_label", re.compile(r"close", re.IGNORECASE)),
     ("role_button", re.compile(r"got it|понятно", re.IGNORECASE)),
-    ("role_button", re.compile(r"no,?\s*thanks|нет,?\s*спасибо", re.IGNORECASE)),
+    ("role_button", re.compile(r"no,?\s thanks|нет,?\s спасибо", re.IGNORECASE)),
     ("role_button", re.compile(r"skip tour|пропустить тур", re.IGNORECASE)),
-    ("role_button", re.compile(r"collapse|minimize|свернуть", re.IGNORECASE)),
 ]
 
 # Плавающая кнопка Rovo (AI-ассистент Jira) в правом нижнем углу — отдельный
@@ -141,7 +158,7 @@ class BasePage:
         locator.wait_for(state="visible", timeout=self.timeout)
         return (locator.text_content() or "").strip()
 
-    # --- Диагностика на падение (используется в conftest hook, но доступно и из теста) ---
+    # --- Диагностика на падение ---
 
     def screenshot(self, path: Union[str, Path]) -> None:
         self.page.screenshot(path=str(path), full_page=True)
@@ -157,6 +174,14 @@ class BasePage:
 
         rounds: сколько раз повторить проход по кандидатам — некоторые
         оверлеи появляются по очереди (один закрылся — показался следующий).
+
+        ВАЖНО (2026-11-25): этот метод НЕ ДОЛЖЕН трогать продуктовые тогглы
+        сворачивания секций сайдбара (Details / Apps / app-секции). Кандидат
+        по "collapse|minimize" удалён именно поэтому — см. развёрнутый
+        комментарий у _ONBOARDING_DISMISS_CANDIDATES. Если в будущем
+        появится онбординг-оверлей, который реально нужно свернуть, для него
+        нужен Узкий подтверждённый локатор (data-testid конкретного оверлея),
+        а не общий глагол в accessible name.
         """
         try:
             self.page.keyboard.press("Escape")
@@ -183,6 +208,11 @@ class BasePage:
         (aria-expanded). Если чат-панель уже раскрыта — кликаем по той же
         кнопке ещё раз, чтобы свернуть, и дополнительно жмём Escape (часть
         чат-панелей закрывается только так).
+
+        Это ЕДИНСТВЕННОЕ место, где мы осознанно сворачиваем продуктовый
+        toggle: Rovo-панель перекрывает сайдбар и перехватывает клики, а её
+        локатор узкий (accessible name содержит "Rovo"), поэтому чужие
+        секции под него не попадают.
         """
         rovo_button = self.page.get_by_role("button", name=_ROVO_TOGGLE_BUTTON_NAME).first
         try:

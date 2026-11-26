@@ -19,6 +19,7 @@ from pages.issue_page import IssuePage
 from pages.login_page import LoginPage
 from scripts.generate_storage_state import login_and_save_storage_state
 from utils.mail_client import MailClient
+from pages.components.reminder_modal import ReminderModal
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -491,3 +492,27 @@ def pytest_runtest_makereport(item, call):
         allure.attach(page.url, name="url", attachment_type=allure.attachment_type.TEXT)
     except Exception:
         pass
+
+
+@pytest.fixture
+def reminder_modal(issue_page: IssuePage, issue_key: str) -> ReminderModal:
+    """
+    Открывает страницу задачи, разворачивает секцию Reminder (если свёрнута)
+    и открывает модалку создания ремайндера через кнопку Create.
+    Возвращает готовый к использованию ReminderModal.
+
+    Используется тестами блока When (test_reminder_when_field.py) и любыми
+    другими тестами, которым нужна открытая форма "New reminder".
+    """
+    # Открываем страницу задачи и закрываем онбординг-оверлеи, если есть
+    issue_page.open(issue_key)
+
+    # Разворачиваем секцию, если она свёрнута (обычно уже развёрнута,
+    # но на всякий случай — см. докстринг ReminderPanel про
+    # aria-expanded="true" по умолчанию)
+    issue_page.reminder_panel.expand()
+
+    # Кликаем Create и ждём готовности формы.
+    # ВАЖНО: open_create_modal() сам вызывает wait_until_ready(),
+    # поэтому повторно ждать не нужно.
+    return issue_page.reminder_panel.open_create_modal()

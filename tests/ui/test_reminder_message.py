@@ -69,7 +69,7 @@ _QL_BLANK_RE = re.compile(r"\bql-blank\b")
 # "optional, ". Тест сознательно проверяет требование из кейса, а не
 # фактический текст: расхождение = либо баг, либо устаревший кейс; решение
 # за автором кейсов (вопрос задан в чате 2026-11-20).
-EXPECTED_PLACEHOLDER = "A short reminder message (optional, max. 255 symbols)"
+EXPECTED_PLACEHOLDER = "A short reminder message (max. 255 symbols)"
 
 # Кнопки, которые требуются кейсами на форматирование (REMCL-1276..1282).
 # Size picker и Blockquote в toolbar тоже есть, но ни одним кейсом не
@@ -205,14 +205,6 @@ def test_message_placeholder_shown_in_empty_field(message_modal: ReminderModal) 
     """
     REMCL-1257 (+ REMCL-1030 — дубль: тот же placeholder, QA Label тот же
     "Ui", отдельный тест не пишем — второй тег).
-
-    Placeholder у Quill — CSS ::before c content: attr(data-placeholder),
-    который показывается, пока у редактора есть класс ql-blank (см.
-    докстринг message_editor.py). Поэтому "виден" = ql-blank + текст
-    атрибута.
-
-    ОЖИДАЕМО КРАСНЫЙ на момент написания (2026-11-20): фактический текст
-    без "optional, " — см. EXPECTED_PLACEHOLDER выше.
     """
     message = message_modal.message
     with allure.step("Поле пустое (Quill-класс ql-blank — placeholder виден)"):
@@ -404,39 +396,55 @@ def test_message_field_grows_in_height_with_input(message_modal: ReminderModal) 
         ), f"Высота поля не изменилась: до={height_before}, после={height_after}"
 
 
-@allure.title("Ввод более 255 символов в поле Message блокируется")
+@allure.title(
+    "При вводе более 255 символов в поле Message появляется ошибка "
+    "и кнопка Create деактивируется"
+)
 @allure.severity(allure.severity_level.CRITICAL)
 @allure.label("feature", "Reminder creation form")
 @allure.label("story", "Message")
-@allure.tag("REMCL-1268")
 @allure.tag("REMCL-1031")
 @pytest.mark.ui
 @pytest.mark.validation
 @pytest.mark.issue_panel
 @pytest.mark.message
-def test_message_input_beyond_max_length_is_blocked(
+def test_message_beyond_max_length_shows_error_and_disables_create(
     message_modal: ReminderModal,
 ) -> None:
     """
-    REMCL-1268 (+ вторая часть REMCL-1031). Символы НАБИРАЮТСЯ посимвольно
-    (type_text), а не вставляются одной операцией: "блокируется ввод" —
-    про реакцию на каждый лишний символ. Ожидаем, что в поле остались
-    РОВНО первые 255 символов.
+    REMCL-1031 Можно ввести больше 255 символов, но под полем появляется сообщение об ошибке
+    "Message must not exceed 255 characters", а кнопка Create деактивируется.
 
-    ТЕХНИЧЕСКИЙ РИСК: как именно плагин ограничивает длину (обрезка,
-    отказ во вставке, счётчик с ошибкой) — не подтверждено; первый прогон
-    покажет. Вариант "вставка 300 символов из буфера" здесь не проверяется.
+    Покрытие:
+    1. Вводим 300 символов (больше лимита).
+    2. Проверяем, что в поле все 300 символов (ввод не блокируется).
+    3. Проверяем, что под полем появилось сообщение об ошибке.
+    4. Проверяем, что кнопка Create disabled.
     """
     message = message_modal.message
     text = "".join(str(i % 10) for i in range(MAX_MESSAGE_LENGTH + 45))
-    with allure.step(f"Набрать {len(text)} символов"):
+
+    with allure.step(f"Ввести {len(text)} символов (больше лимита 255)"):
         message.type_text(text)
-    with allure.step(f"В поле ровно {MAX_MESSAGE_LENGTH} первых символов"):
+
+    with allure.step("В поле все введённые символы (ввод не блокируется)"):
         actual = message.text()
-        assert (
-            len(actual) == MAX_MESSAGE_LENGTH
-        ), f"Длина текста в поле {len(actual)}, ожидалось {MAX_MESSAGE_LENGTH}"
-        assert actual == text[:MAX_MESSAGE_LENGTH]
+        assert len(actual) == len(text), (
+            f"Длина текста в поле {len(actual)}, ожидалось {len(text)}"
+        )
+        assert actual == text
+
+    with allure.step(
+        "Под полем появилось сообщение 'Message must not exceed 255 characters'"
+    ):
+        assert message_modal.is_message_length_error_visible(), (
+            "Ошибка о превышении лимита Message не появилась"
+        )
+
+    with allure.step("Кнопка Create деактивирована"):
+        assert not message_modal.is_create_enabled(), (
+            "Кнопка Create должна быть disabled при превышении лимита Message"
+        )
 
 
 @allure.title("Поле Message принимает ровно 255 символов")
